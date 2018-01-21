@@ -1,0 +1,7 @@
+{
+  "wifiSSID": "your_wifi_ssid",
+  "wifiPSK": "your_wifi_psk",
+  "deviceID": "your_losant_deviceid",
+  "accessKey": "your_losant_accesskey",
+  "accessSecret": "your_losant_secret"
+}
