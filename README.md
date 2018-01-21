@@ -1,6 +1,6 @@
 # EnviroNode
 ESP8266-based environmental monitoring node software, intended for a WeMos D1 + SHT30 shield + 64x48 OLED shield.
-Created by [Andrew Holmes](neg2led@gmail.com); last updated 13/01/2018. Licensed under [Creative Commons Attribution-ShareAlike 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+Created by [Andrew Holmes](neg2led@gmail.com). Licensed under [Creative Commons Attribution-ShareAlike 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 Contents heavily stolen from Steve Chamberlin at Big Mess O' Wires; his post [here](http://bit.ly/2D7xqt7) contains the code I began from.
 
 ### Code features;

@@ -24,8 +24,7 @@
     !!! Please note that the Losant library requires ArduinoJson from the library manager to function as it uses this internally!   !!!
     !!! See Losant Arduino docs at https://docs.losant.com/getting-started/boards/getting-started-with-arduino-wifi-101/            !!!
 */
-#define SKETCH_VER 3.0.1 // seems I've rewritten this a few times now
-//#define HWINFO // prints device info on boot
+#define SKETCH_VER 3.1.0 // seems I've rewritten this a few times now
 
 // Networking & time libraries
 #include <ESP8266WiFi.h>              // built-in "ESP8266WiFi"
@@ -43,17 +42,33 @@
 #include <Timezone.h>                 // Jack Christensen's Timezone library - https://github.com/JChristensen/Timezone
 #include <SHT3x.h>                    // SHT3x library from @risele on Github https://github.com/Risele/SHT3x - the adafruit one is slow and bad, it turns out
 #include "Adafruit_SSD1306.h"         // This is the custom SSD1306 module for AdafruitGFX mentioned above, courtesy of Mark Causer.
+#include "FS.h"                       // ESP8266 SPIFFS library
+
+// config below can be set manually per-upload, or you can flip the define below to enable JSON config loading/saving
+#define JSONCFG // see files/ESP_123456.json for example if you want to use the SPIFFS tool to load a bunch of files - this uses the last 6 digits of the MAC, so it's ESP_MACADD.json
+//#define SAVECFG // enables config saving if config loading fails - this formats the spiffs. you can use this to create the cfg file
+//#define HWINFO // prints device info on boot
 
 // Select your sensor
 #define SHTSENS
 //#define BMP085
 
+#ifndef JSONCFG
 // WiFi credentials.
 const char *wifi_ssid = "your_network";
 const char *wifi_psk = "your_psk";
 const char *losant_deviceid = "your_deviceid";
 const char *losant_accesskey = "your_accesskey";
 const char *losant_secret = "your_secret";
+#endif
+#ifdef JSONCFG
+// if loaded from JSON, we don't know how big these are - so nice big arrays allocated
+char wifi_ssid[32] = "your_network";
+char wifi_psk[32] = "your_psk";
+char losant_deviceid[32] = "your_deviceid";   // 24 chars long currently
+char losant_accesskey[48] = "your_accesskey"; // 36 chars long currently
+char losant_secret[72] = "your_secret";       // 64 chars long currently
+#endif
 
 // Temperature scale - may be changed by losant command
 volatile char tempScale = 'C';
@@ -97,7 +112,7 @@ WiFiClientSecure wifiClient;
 time_t local;
 WiFiUDP ntpUDP;
 // Losant device
-LosantDevice device(losant_deviceid);
+LosantDevice device;
 
 int lastUpdateTime = 0;
 const char degSym = char(0xF7); // degrees symbol from adafruit font
@@ -125,16 +140,29 @@ void setup() {
   bmp085.begin();
 #endif
   Serial.println();
-  Serial.println("Device init OK!");
-#ifdef HWINFO
-  Serial.println("Hardware Info:");
+  Serial.println("Device init OK! Hardware info:");
   WiFi.printDiag(Serial);
   Serial.printf("Device hostname: %s\n", WiFi.hostname().c_str());
+#ifdef JSONCFG
+ SPIFFS.begin();
+ Serial.print("Loading JSON CFG...");
+ if (! loadConfig()) {
+  Serial.println("FAIL!");
+#ifdef SAVECFG
+  SPIFFS.format();
+  saveConfig();
+#endif
+ } else {
+  Serial.println("success!");
+  SPIFFS.end();
+}
+#endif
+  Serial.println("Config details:");
   Serial.printf("WiFi SSID: %s PSK: %s\n", wifi_ssid, wifi_psk);
   Serial.printf("Losant DeviceID: %s\n", losant_deviceid);
-#endif
+  device.setId(losant_deviceid);
   delay(250);
-
+  
   initWifi();
   initLosant();
   // Pass the command handler function to the Losant device.
@@ -425,6 +453,87 @@ int rssiBars() { // convert RSSI into 0-5 number range - 0.5hz update since it t
     return 0;
   } 
 }
+
+/*-------- JSON config code ----------*/
+
+#ifdef JSONCFG
+bool loadConfig() {
+  String strHost = "/";
+  strHost.concat(WiFi.hostname());
+  strHost.concat(".json");
+  File configFile = SPIFFS.open(strHost, "r");
+  if (!configFile) {
+    Serial.println("Failed to open config file");
+    return false;
+  }
+
+  size_t size = configFile.size();
+  if (size > 1024) {
+    Serial.println("Config file is too large");
+    return false;
+  }
+
+  // Allocate a buffer to store contents of the file.
+  std::unique_ptr<char[]> buf(new char[size]);
+
+  // We don't use String here because ArduinoJson library requires the input
+  // buffer to be mutable. If you don't use ArduinoJson, you may as well
+  // use configFile.readString instead.
+  configFile.readBytes(buf.get(), size);
+  const size_t bufferSize = JSON_OBJECT_SIZE(5) + 256;
+  DynamicJsonBuffer jsonBuffer(bufferSize);
+  JsonObject& cfgjson = jsonBuffer.parseObject(buf.get());
+
+  if (!cfgjson.success()) {
+    Serial.println("Failed to parse config file");
+    return false;
+  }
+
+ /* strcpy(wifi_ssid,cfgjson["wifiSSID"]);
+  strcpy(wifi_psk,cfgjson["wifiPSK"]);
+  strcpy(losant_accesskey,cfgjson["accessKey"]);
+  strcpy(losant_secret,cfgjson["accessSecret"]);
+  strcpy(losant_deviceid,cfgjson["deviceID"]); */
+
+  sprintf(wifi_ssid,cfgjson["wifiSSID"]);
+  sprintf(wifi_psk,cfgjson["wifiPSK"]);
+  sprintf(losant_accesskey,cfgjson["accessKey"]);
+  sprintf(losant_secret,cfgjson["accessSecret"]);
+  sprintf(losant_deviceid,cfgjson["deviceID"]);
+
+  Serial.println("JSON config loaded!");
+  /* // the prettyprint does the job
+  Serial.printf("SSID: %s PSK: %s\n", wifi_ssid, wifi_psk);
+  Serial.printf("deviceID: %s\n", losant_deviceid);
+  Serial.printf("accessKey: %s\n", losant_accesskey);
+  Serial.printf("accessSecret: %s\n", losant_secret);
+  */
+  cfgjson.prettyPrintTo(Serial);
+  return true;
+}
+
+bool saveConfig() {
+  StaticJsonBuffer<200> jsonBuffer;
+  JsonObject& cfgjson = jsonBuffer.createObject();
+  cfgjson["wifiSSID"] = wifi_ssid;
+  cfgjson["wifiPSK"] = wifi_psk;
+  cfgjson["accessKey"] = losant_accesskey;
+  cfgjson["accessSecret"] = losant_secret;
+  cfgjson["deviceID"] = losant_deviceid;
+
+  String strHost = "/";
+  strHost.concat(WiFi.hostname());
+  strHost.concat(".json");
+  File configFile = SPIFFS.open(strHost, "w");
+  if (!configFile) {
+    Serial.println("Failed to open config file for writing");
+    return false;
+  }
+//  cfgjson.prettyPrintTo(Serial);
+  cfgjson.prettyPrintTo(configFile);
+  return true;
+}
+#endif
 
 /*-------- NTP code ----------*/
 
