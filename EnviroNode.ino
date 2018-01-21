@@ -24,7 +24,7 @@
     !!! Please note that the Losant library requires ArduinoJson from the library manager to function as it uses this internally!   !!!
     !!! See Losant Arduino docs at https://docs.losant.com/getting-started/boards/getting-started-with-arduino-wifi-101/            !!!
 */
-#define SKETCH_VER 3.1.0 // seems I've rewritten this a few times now
+#define SKETCH_VER 3.1.1 // seems I've rewritten this a few times now
 
 // Networking & time libraries
 #include <ESP8266WiFi.h>              // built-in "ESP8266WiFi"
@@ -303,17 +303,15 @@ bool initLosant() {
 }
 
 /* Command callback function - invoked on receiving a command from Losant
- * No commands yet implemented. */
+ * No commands yet implemented properly */
 void handleCommand(LosantCommand *command) {
   Serial.print("Command received: ");
   Serial.println(command->name);
-
-  // Optional command payload. May not be present on all commands.
-  JsonObject& payload = *command->payload;
-
-  // Perform action specific to the command received.
-  if (strcmp(command->name, "set-opts") == 0) {
-    tempScale = char(payload["scale"]);
+  // Perform action specific to the command.
+  if (strcmp(command->name, "set-degF") == 0) {
+    tempScale = 'F';
+  } else if (strcmp(command->name, "set-degC") == 0) {
+    tempScale = 'C';
   }
 }
 
